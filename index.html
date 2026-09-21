@@ -1619,6 +1619,35 @@ $('#menuBtn').onclick = () => $('#nav').classList.toggle('on');
 setInterval(() => { $('#topClock').textContent = new Date().toLocaleTimeString('pt-BR'); }, 1000);
 $('#topClock').textContent = new Date().toLocaleTimeString('pt-BR');
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+ window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+
+const ALMOX_API = "https://script.google.com/macros/s/AKfycbydcwGnB-3CEpaarQdxA1xRAGCg9YCEtQYWwKQklC_eBkCyIHO5a8J4RgXjqWKVDBqPQ/exec";
+
+
+async function carregarAPIAlmox(){
+
+    try {
+
+        const resposta = await fetch(ALMOX_API);
+
+        const dadosAPI = await resposta.json();
+
+        console.log("API Almoxarifado carregada:", dadosAPI);
+
+        window.DADOS_API = dadosAPI;
+
+    } catch(erro){
+
+        console.error("Erro ao carregar API:", erro);
+
+    }
+
+}
+
+
+carregarAPIAlmox();
+
 carregarEmbutido();
 render();
 
