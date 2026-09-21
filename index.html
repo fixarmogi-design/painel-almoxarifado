@@ -480,17 +480,16 @@ async function carregarEmbutido() {
 
         if(window.DADOS_API){
 
-            Object.keys(SCHEMA).forEach(k => {
+         Object.keys(SCHEMA).forEach(k => {
 
-                if(window.DADOS_API[k]){
+    if(window.DADOS_API[k]){
 
-                    DB[k] = Array.isArray(window.DADOS_API[k])
-                    ? window.DADOS_API[k]
-                    : parseCSV(window.DADOS_API[k]);
+        DB[k] = window.DADOS_API[k];
 
-                }
+    }
 
-            });
+});
+ 
 
             origem = 'api';
             dirty = false;
