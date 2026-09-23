@@ -476,57 +476,48 @@ const EMB = (() => {
 })();
 async function carregarEmbutido() {
 
-    try {
+  try {
 
-        if(window.DADOS_API){
+    const resposta = await fetch(
+      "https://script.google.com/macros/s/AKfycbydcwGnB-3CEpaarQdxA1xRAGCg9YCEtQYWwK-QklC_eBkCyIHO5a8J4RgXjqWKVDBqPQ/exec"
+    );
 
-        Object.keys(SCHEMA).forEach(k => {
-
-    if(window.DADOS_API[k]){
-
-        DB[k] = window.DADOS_API[k];
-
-    }
-
-});
- 
-
-            origem = 'api';
-            dirty = false;
-
-            console.log("Dados carregados da API");
-
-            return true;
-
-        }
+    const dados = await resposta.json();
 
 
-        if (!EMB) return false;
+    Object.keys(SCHEMAS).forEach(k => {
 
-        Object.keys(SCHEMA).forEach(k => {
+      if (dados[k]) {
 
-            if (EMB[k]) DB[k] = parseCSV(EMB[k]);
+        DB[k] = dados[k];
 
-        });
+      }
 
-        origem = 'demo';
-        dirty = false;
-
-        console.log("Dados carregados do HTML");
-
-        return true;
+    });
 
 
-    } catch(e){
+    origem = "api";
+    dirty = false;
 
-        console.error("Erro carregando dados:", e);
 
-        return false;
+    console.log("Dados carregados do Google Sheets", DB);
 
-    }
+
+    return true;
+
+
+  } catch (erro) {
+
+
+    console.error("Erro buscando dados da planilha:", erro);
+
+
+    return false;
+
+
+  }
 
 }
-
 /* ------------------------------------------------------------------ MÉTRICAS */
 function statusItem(it) {
   const q = it._qtd, m = it._min;
