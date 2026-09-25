@@ -478,23 +478,42 @@ const API_ALMOX = "https://script.google.com/macros/s/AKfycbydcwGnB-3CEpaarQdxA1
 const CHAVE_COPIA = 'almox-ultima-copia';
 const ATUALIZAR_MIN = 3;          // de quantos em quantos minutos busca de novo com a página aberta
 
-/* nomes antigos do mesmo produto */
-function produtoCanonico(p) {
-  const n = norm(p).toUpperCase().trim();
-  if (n === 'CAIXA TANQUINHO' || n === 'BLINDAGEM') return 'Blindagem';
-  if (n === 'MEDIDOR' || n === 'MEDIDORES') return 'Medidores';
-  return String(p || '').trim();
+/* aceita a resposta da API em qualquer formato comum: lista de objetos, lista de linhas
+   (1ª linha = cabeçalho), texto CSV, e embrulhada em {dados:…}/{data:…} */
+function comoLinhas(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') return v.trim() ? parseCSV(v) : [];
+  if (!Array.isArray(v)) return null;
+  if (!v.length) return [];
+  if (Array.isArray(v[0])) {
+    const hs = v[0].map(h => norm(h).replace(/\s+/g, '_'));
+    return v.slice(1).filter(r => r.some(x => String(x ?? '').trim() !== ''))
+      .map(r => { const o = {}; hs.forEach((h, j) => o[h] = r[j] ?? ''); return o; });
+  }
+  return v.map(o => { const n = {}; Object.keys(o || {}).forEach(k => n[norm(k).replace(/\s+/g, '_')] = o[k]); return n; });
 }
 
-function aplicarDados(dados) {
-  Object.keys(SCHEMAS).forEach(k => { if (Array.isArray(dados[k])) DB[k] = dados[k]; });
-  /* a aba producao antiga + os fechamentos de produção que os gerentes lançam pelo bot */
-  const antiga = (Array.isArray(dados.producao) ? dados.producao : []).map(p => ({ ...p, produto: produtoCanonico(p.produto) }));
-  const doBot = (Array.isArray(dados.fechamento_producao) ? dados.fechamento_producao : [])
-    .filter(f => String(f.quantidade ?? '').trim() !== '')
-    .map(f => ({ data: f.data, produto: produtoCanonico(f.produto || 'BLINDAGEM'),
-                 meta_diaria: f.meta, produzidas: f.quantidade, turno: f.base || '' }));
-  DB.producao = antiga.concat(doBot);
+function desembrulhar(r) {
+  if (!r || typeof r !== 'object') return {};
+  for (const k of ['dados', 'data', 'abas', 'sheets', 'result']) {
+    if (r[k] && typeof r[k] === 'object' && !Array.isArray(r[k])) return r[k];
+  }
+  return r;
+}
+
+function aplicarDados(resposta) {
+  const bruto = desembrulhar(resposta);
+  const dados = {};
+  Object.keys(bruto).forEach(k => {
+    const linhas = comoLinhas(bruto[k]);
+    if (linhas) dados[norm(k).replace(/\s+/g, '_')] = linhas;
+  });
+  Object.keys(SCHEMAS).forEach(k => { if (dados[k]) DB[k] = dados[k]; });
+  /* avisa na tela se a API deixou de mandar alguma aba que o painel usa */
+  const faltando = ['estoque', 'movimentacoes', 'producao'].filter(k => !dados[k]);
+  if (faltando.length) setTimeout(() => { try { toast('A planilha não mandou: ' + faltando.join(', '), 1); } catch (e) {} }, 500);
+  console.log('Abas recebidas da API:', Object.keys(dados).map(k => k + ' (' + dados[k].length + ')').join(', '));
+  return Object.keys(dados).length > 0;
 }
 
 function lerCopiaLocal() {
@@ -504,22 +523,28 @@ function lerCopiaLocal() {
 
 async function carregarEmbutido() {
   const ctl = new AbortController();
-  const limite = setTimeout(() => ctl.abort(), 25000);
+  const limite = setTimeout(() => ctl.abort(), 60000);
   try {
-    const resposta = await fetch(API_ALMOX, { signal: ctl.signal, cache: 'no-store' });
-    const dados = await resposta.json();
-    aplicarDados(dados);
+    const resposta = await fetch(API_ALMOX, { signal: ctl.signal });
+    const texto = await resposta.text();
+    let dados;
+    try { dados = JSON.parse(texto); }
+    catch (e) { throw new Error('a API não devolveu dados (começa com: ' + texto.slice(0, 80) + ')'); }
+    if (dados && dados.erro) throw new Error(String(dados.erro));
+    if (!aplicarDados(dados)) throw new Error('a API respondeu, mas sem nenhuma aba reconhecida');
     origem = 'api';
     dirty = false;
     try { localStorage.setItem(CHAVE_COPIA, JSON.stringify({ quando: Date.now(), dados })); } catch (e) {}
     return true;
   } catch (erro) {
     console.error('Erro buscando dados da planilha:', erro);
+    try { toast('Não consegui buscar os dados da planilha: ' + (erro.name === 'AbortError' ? 'demorou demais' : erro.message), 1); } catch (e) {}
     return false;
   } finally {
     clearTimeout(limite);
   }
 }
+
 /* ------------------------------------------------------------------ MÉTRICAS */
 function statusItem(it) {
   const q = it._qtd, m = it._min;
@@ -1104,7 +1129,7 @@ function pgProducao() {
         <span class="hbar-n">${esc(p.produto)}</span><span class="hbar-v">${pct}% &nbsp;<b>${n0(p.prod)}</b>/${n0(p.meta)}</span>
         <span class="hbar-tr"><span class="hbar-fl" style="width:${Math.min(100, pct)}%;background:${cor}"></span></span></div>`; }).join('')}</div></div>
   ${tabela('producao', [
-    { k: 'data', t: 'Data', sort: p => p._d || 0 }, { k: 'produto', t: 'Produto' }, { k: 'turno', t: 'Turno / base' },
+    { k: 'data', t: 'Data', sort: p => p._d || 0 }, { k: 'produto', t: 'Produto' }, { k: 'turno', t: 'Turno' },
     { k: '_meta', t: 'Meta', num: 1, r: p => n0(p._meta) },
     { k: '_prod', t: 'Produzidas', num: 1, r: p => `<b>${n0(p._prod)}</b>` },
     { k: 'pct', t: '% meta', num: 1, sort: p => p._meta ? p._prod / p._meta : 0, r: p => { const v = p._meta ? Math.round(p._prod / p._meta * 100) : 0; return tag(v + '%', v >= 100 ? 'var(--good)' : v >= 70 ? 'var(--warn)' : 'var(--crit)'); } },
